@@ -1,0 +1,6 @@
+{
+  "name": "CLI Bible — Консольна Біблія",
+  "description": "Повністю консольний термінал для читання та пошуку Біблії з TUI-інтерфейсом, пошуком по книгах і главах, гарячими клавішами та термінальними командами.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
