@@ -1184,9 +1184,9 @@ export default function App() {
                 {OLD_TESTAMENT.map((b) => (
                   <div
                     key={b.id}
-                    className="break-inside-avoid w-full text-left text-[#00ff41] flex items-center space-x-2 py-0.5"
+                    className="break-inside-avoid w-full text-left text-[#00ff41] flex items-center gap-2 py-0.5"
                   >
-                    <span className="opacity-60 font-mono text-xs w-5">{String(b.number).padStart(2, '0')}.</span>
+                    <span className="opacity-60 font-mono text-xs shrink-0 tabular-nums">{String(b.number).padStart(2, '0')}.</span>
                     <span className="font-bold">{language === 'en' ? b.nameEng : b.nameUkr}</span>
                     <span className="opacity-50 text-xs">({language === 'en' ? b.shortEng : b.shortUkr})</span>
                   </div>
@@ -1206,9 +1206,9 @@ export default function App() {
                 {NEW_TESTAMENT.map((b) => (
                   <div
                     key={b.id}
-                    className="break-inside-avoid w-full text-left text-[#00ff41] flex items-center space-x-2 py-0.5"
+                    className="break-inside-avoid w-full text-left text-[#00ff41] flex items-center gap-2 py-0.5"
                   >
-                    <span className="opacity-60 font-mono text-xs w-5">{String(b.number).padStart(2, '0')}.</span>
+                    <span className="opacity-60 font-mono text-xs shrink-0 tabular-nums">{String(b.number).padStart(2, '0')}.</span>
                     <span className="font-bold">{language === 'en' ? b.nameEng : b.nameUkr}</span>
                     <span className="opacity-50 text-xs">({language === 'en' ? b.shortEng : b.shortUkr})</span>
                   </div>
@@ -1378,12 +1378,12 @@ export default function App() {
                       id: `verse-${v.verse}`,
                       key: isSelected ? `verse-${v.verse}-${highlightKey}` : `verse-${v.verse}`,
                       prefix: (
-                        <span className={`font-bold shrink-0 inline-block w-7 ${isSelected && lightState !== 'off' ? 'text-[#00ff41]' : 'opacity-75'}`}>
+                        <span className={`font-bold shrink-0 tabular-nums select-none ${isSelected && lightState !== 'off' ? 'text-[#00ff41]' : 'opacity-75'}`}>
                           {v.verse}.
                         </span>
                       ),
                       text: language === 'en' ? (v.textEng || v.textUkr) : v.textUkr,
-                      className: `flex items-start space-x-2 p-2 rounded border border-transparent transition-colors ${highlightClass}`
+                      className: `flex items-start gap-2.5 p-2 rounded border border-transparent transition-colors ${highlightClass}`
                     };
                   })}
                 />

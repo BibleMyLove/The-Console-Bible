@@ -197,10 +197,12 @@ const MultiLineTypewriterComponent: React.FC<MultiLineTypewriterProps> = ({
             className={line.className || ''}
           >
             {line.prefix}
-            <span>{visibleText}</span>
-            {showCursor && isCurrent && (
-              <span className="inline-block w-2 bg-[#00ff41] animate-pulse ml-0.5">_</span>
-            )}
+            <span className="flex-1 min-w-0">
+              {visibleText}
+              {showCursor && isCurrent && (
+                <span className="inline-block w-2 bg-[#00ff41] animate-pulse ml-0.5">_</span>
+              )}
+            </span>
             {(!isCurrent || visibleText === line.text) && line.suffix}
           </div>
         );
