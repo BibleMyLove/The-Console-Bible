@@ -70,11 +70,27 @@ export default function App() {
   const [screen, setScreen] = useState<ScreenState>({ type: 'home' });
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [crtEffect, setCrtEffect] = useState(true);
+  const [uiScale, setUiScale] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('bible_tui_scale');
+      if (saved) {
+        const val = parseInt(saved, 10);
+        if (!isNaN(val) && val >= 70 && val <= 200) return val;
+      }
+    }
+    return 100;
+  });
   const [helpFilter, setHelpFilter] = useState('');
   const [highlightKey, setHighlightKey] = useState<number>(Date.now());
   const [lightState, setLightState] = useState<'fade' | 'on' | 'off'>('fade');
   const [screenHistory, setScreenHistory] = useState<ScreenState[]>([]);
   const [currentTime, setCurrentTime] = useState<Date>(() => new Date());
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('bible_tui_scale', uiScale.toString());
+    } catch {}
+  }, [uiScale]);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -367,6 +383,34 @@ export default function App() {
       return;
     }
 
+    // UI Scale / Font Size Increase: +, ++, +++, +1, zoom +, scale +, font +, збільшити, більше
+    if (/^(\+{1,3}|\+1|\+2|zoom\s*\+|scale\s*\+|font\s*\+|zoom\s*in|zoomin|scale\s*up|scaleup|збільшити|більше)$/i.test(lower)) {
+      setUiScale(prev => Math.min(prev + 10, 200));
+      return;
+    }
+
+    // UI Scale / Font Size Decrease: -, --, ---, -1, zoom -, scale -, font -, зменшити, менше
+    if (/^(\-{1,3}|\-1|\-2|zoom\s*\-|scale\s*\-|font\s*\-|zoom\s*out|zoomout|scale\s*down|scaledown|зменшити|менше)$/i.test(lower)) {
+      setUiScale(prev => Math.max(prev - 10, 70));
+      return;
+    }
+
+    // UI Scale Reset: 0, zoom 0, zoom 100, scale 100, zoom reset, scale reset
+    if (/^(0|zoom\s*0|zoom\s*100|zoom\s*100%|zoom\s*reset|scale\s*0|scale\s*100|scale\s*reset|font\s*reset|скинути\s*масштаб)$/i.test(lower)) {
+      setUiScale(100);
+      return;
+    }
+
+    // Explicit scale percentage: e.g. "zoom 120", "scale 90"
+    const zoomValMatch = lower.match(/^(?:zoom|scale|font|масштаб)\s*(\d{2,3})%?$/i);
+    if (zoomValMatch) {
+      const val = parseInt(zoomValMatch[1], 10);
+      if (val >= 60 && val <= 250) {
+        setUiScale(val);
+        return;
+      }
+    }
+
     // Manual light ON: light on; lighton; lton; lt on; light-on; lt-on; lon
     const isLightOn = /^(?:light\s*on|lighton|lton|lt\s*on|light-on|lt-on|lon|світло\s*(?:увімк|вкл|вмк|он)|підсвітка\s*(?:вкл|увімк)|підсвічування\s*(?:вкл|увімк)|(?:вкл|увімк)\s*світло)$/i.test(lower);
 
@@ -569,9 +613,19 @@ export default function App() {
       }
     }
 
-    // Search command: "search <text>" or "знайти <text>" or "/ <text>"
-    if (lower.startsWith('search ') || lower.startsWith('знайти ') || lower.startsWith('/')) {
-      const q = cmd.replace(/^(search|знайти|\/)\s*/i, '').trim();
+    // Search command variants:
+    // 1. Standalone search trigger: search, пошук, знайти, find, шукати, шукай, /
+    if (/^(?:search|пошук|знайти|find|шукати|шукай|\/)$/i.test(lower)) {
+      navigateTo({ type: 'search', query: '', results: [] });
+      return;
+    }
+
+    // 2. Search with arguments:
+    // "search <text>", "пошук <text>", "знайти <text>", "find <text>", "шукати <text>", "/ <text>", "/<text>", "? <text>", "?<text>", "s <text>"
+    const searchPrefixMatch = cmd.match(/^(?:search|пошук|знайти|find|шукати|шукай|s)[\s:=]+(.+)$/i) ||
+      cmd.match(/^[\/?](.+)$/);
+    if (searchPrefixMatch) {
+      const q = searchPrefixMatch[1].trim();
       if (q) {
         const results = searchBible(q, { translation });
         navigateTo({ type: 'search', query: q, results });
@@ -602,6 +656,17 @@ export default function App() {
     if (foundBook) {
       navigateTo({ type: 'book', book: foundBook });
       return;
+    }
+
+    // Auto-search fallback:
+    // If the input is a word/phrase with at least 2 characters and doesn't match any system command:
+    const cleanWord = cmd.trim();
+    if (cleanWord.length >= 2 && !/^\d+$/.test(cleanWord)) {
+      const results = searchBible(cleanWord, { translation });
+      if (results.length > 0) {
+        navigateTo({ type: 'search', query: cleanWord, results });
+        return;
+      }
     }
 
     // Fallback: Command does not exist
@@ -650,7 +715,8 @@ export default function App() {
 
   return (
     <div 
-      className={`h-screen w-screen bg-black text-[#00ff41] font-mono select-none flex flex-col justify-between p-4 md:p-8 overflow-hidden text-sm md:text-base ${crtEffect ? 'crt-overlay crt-vignette crt-bloom-green' : ''}`}
+      style={{ fontSize: `${uiScale}%` }}
+      className={`h-screen w-screen bg-black text-[#00ff41] font-mono select-none flex flex-col justify-between p-4 md:p-8 overflow-hidden text-sm md:text-base transition-[font-size] duration-150 ${crtEffect ? 'crt-overlay crt-vignette crt-bloom-green' : ''}`}
       onClick={() => {
         if (!isMobileOrTouch()) {
           inputRef.current?.focus();
@@ -662,7 +728,7 @@ export default function App() {
         <div className="font-bold tracking-widest uppercase flex items-center space-x-2">
           <span>{language === 'en' ? 'THE HOLY BIBLE' : 'THE HOLY BIBLE // СВЯТА БІБЛІЯ'}</span>
           <span className="text-[10px] opacity-70 border border-[#00ff41]/40 px-1 py-0.5">
-            [{language.toUpperCase()} // {translation.toUpperCase()}]
+            [{language.toUpperCase()} // {translation.toUpperCase()}{uiScale !== 100 ? ` // ${uiScale}%` : ''}]
           </span>
         </div>
         <div className="opacity-90 font-mono text-xs flex items-center space-x-2 tracking-wider">
@@ -807,6 +873,9 @@ export default function App() {
               speed={20}
               chunkSize={2}
               lines={language === 'en' ? [
+                { id: 'zoom-in', text: '+ - Increase UI terminal interface scale and font size (alias: zoom +, scale +)' },
+                { id: 'zoom-out', text: '- - Decrease UI terminal interface scale and font size (alias: zoom -, scale -)' },
+                { id: 'zoom-reset', text: '0 - Reset UI terminal scale back to 100% default (alias: zoom 100, scale reset)' },
                 { id: 'ac', text: 'ac - View all available terminal commands in alphabetical order' },
                 { id: 'all', text: 'all - List all 66 canonical books of the Bible (alias: books)' },
                 { id: 'back', text: 'back - Navigate back to the previous screen or menu (alias: q)' },
@@ -831,7 +900,7 @@ export default function App() {
                 { id: 'res', text: 'res - Reset terminal screen and clear state' },
                 { id: 'sc', text: 'sc - View settings and terminal options categories ([1]-[2])' },
                 { id: 'sc12', text: 'sc <1-2> - Jump directly to Settings sub-category (1, 2)' },
-                { id: 'search', text: 'search <query> - Search Scripture for text or phrases (alias: / <query>)' },
+                { id: 'search', text: 'search <query> - Search Scripture for text or phrases (alias: search, find, / <query>, or simply type word)' },
                 { id: 'sound', text: 'sound - Toggle keyboard typing sound effects on or off' },
                 { id: 'ubio', text: 'ubio - Switch Bible translation to Ivan Ohienko (UBIO, 1962)' },
                 { id: 'ukr', text: 'ukr - Switch terminal interface language to Ukrainian (alias: ua, uk)' },
@@ -841,6 +910,9 @@ export default function App() {
                 { id: 'prog', text: 'Progressive Jump - Sequential navigation by typing book -> chapter -> verse' },
                 { id: 'name-jump', text: '<name> <ch>[:<v>] - Jump by English/Ukrainian book name (e.g. john 3:16, gen 1:1, ps 23:1)' },
               ] : [
+                { id: 'zoom-in', text: '+ - Збільшити масштаб інтерфейсу та розмір шрифту (синоніми: zoom +, scale +)' },
+                { id: 'zoom-out', text: '- - Зменшити масштаб інтерфейсу та розмір шрифту (синоніми: zoom -, scale -)' },
+                { id: 'zoom-reset', text: '0 - Скинути масштаб інтерфейсу до 100% за замовчуванням (синоніми: zoom 100, scale 100)' },
                 { id: 'ac', text: 'ac - Список усіх команд терміналу за алфавітом' },
                 { id: 'all', text: 'all - Список усіх 66 канонічних книг Біблії (синонім: books)' },
                 { id: 'back', text: 'back - Повернутися до попереднього екрана або меню (синонім: q)' },
@@ -865,7 +937,7 @@ export default function App() {
                 { id: 'res', text: 'res - Скинути стан термінала до початкового' },
                 { id: 'sc', text: 'sc - Переглянути категорії налаштувань термінала ([1]-[2])' },
                 { id: 'sc12', text: 'sc <1-2> - Прямий перехід до підкатегорії налаштувань (1, 2)' },
-                { id: 'search', text: 'search <запит> - Пошук тексту або фраз у Біблії (синонім: / <запит>)' },
+                { id: 'search', text: 'search <запит> - Пошук тексту або слів у Біблії (синоніми: пошук, знайти, / <слово>, або просто ввести слово)' },
                 { id: 'sound', text: 'sound - Перемикання звукових ефектів клавіатури' },
                 { id: 'ubio', text: 'ubio - Перемкнути переклад на Івана Огієнка (UBIO, 1962)' },
                 { id: 'ukr', text: 'ukr - Перемкнути мову інтерфейсу на українську (синоніми: ua, uk)' },
@@ -1034,15 +1106,17 @@ export default function App() {
                   lines={language === 'en' ? [
                     { id: '1-1', text: 'ubio  : ', suffix: <span className="font-bold text-[#00ff41]">Switch to Ivan Ohienko translation [{translation === 'ubio' ? 'ACTIVE' : 'READY'}]</span> },
                     { id: '1-2', text: 'cuv   : ', suffix: <span className="font-bold text-[#00ff41]">Switch to Contemporary translation [{translation === 'cuv' ? 'ACTIVE' : 'READY'}]</span> },
-                    { id: '1-3', text: 'sound : ', suffix: <span className="font-bold text-[#00ff41]">Toggle keyboard typing sound [{soundEnabled ? 'ON' : 'OFF'}]</span> },
-                    { id: '1-4', text: 'crt   : ', suffix: <span className="font-bold text-[#00ff41]">Toggle CRT scanlines & glow [{crtEffect ? 'ON' : 'OFF'}]</span> },
-                    { id: '1-5', text: 'light : ', suffix: <span className="font-bold text-[#00ff41]">Verse light [{lightState.toUpperCase()}] (lton / ltoff)</span> },
+                    { id: '1-3', text: '+ / - : ', suffix: <span className="font-bold text-[#00ff41]">Zoom & font scale [{uiScale}%] (+ to zoom in, - to zoom out, 0 to reset)</span> },
+                    { id: '1-4', text: 'sound : ', suffix: <span className="font-bold text-[#00ff41]">Toggle keyboard typing sound [{soundEnabled ? 'ON' : 'OFF'}]</span> },
+                    { id: '1-5', text: 'crt   : ', suffix: <span className="font-bold text-[#00ff41]">Toggle CRT scanlines & glow [{crtEffect ? 'ON' : 'OFF'}]</span> },
+                    { id: '1-6', text: 'light : ', suffix: <span className="font-bold text-[#00ff41]">Verse light [{lightState.toUpperCase()}] (lton / ltoff)</span> },
                   ] : [
                     { id: '1-1', text: 'ubio  : ', suffix: <span className="font-bold text-[#00ff41]">Переклад Івана Огієнка [{translation === 'ubio' ? 'АКТИВНИЙ' : 'ГОТОВИЙ'}]</span> },
                     { id: '1-2', text: 'cuv   : ', suffix: <span className="font-bold text-[#00ff41]">Сучасний український переклад [{translation === 'cuv' ? 'АКТИВНИЙ' : 'ГОТОВИЙ'}]</span> },
-                    { id: '1-3', text: 'sound : ', suffix: <span className="font-bold text-[#00ff41]">Перемикання звукових ефектів [{soundEnabled ? 'ON' : 'OFF'}]</span> },
-                    { id: '1-4', text: 'crt   : ', suffix: <span className="font-bold text-[#00ff41]">Перемикання CRT світіння [{crtEffect ? 'ON' : 'OFF'}]</span> },
-                    { id: '1-5', text: 'light : ', suffix: <span className="font-bold text-[#00ff41]">Підсвічування [{lightState.toUpperCase()}] (lton / ltoff)</span> },
+                    { id: '1-3', text: '+ / - : ', suffix: <span className="font-bold text-[#00ff41]">Масштаб інтерфейсу [{uiScale}%] (+ збільшити, - зменшити, 0 скинути)</span> },
+                    { id: '1-4', text: 'sound : ', suffix: <span className="font-bold text-[#00ff41]">Перемикання звукових ефектів [{soundEnabled ? 'ON' : 'OFF'}]</span> },
+                    { id: '1-5', text: 'crt   : ', suffix: <span className="font-bold text-[#00ff41]">Перемикання CRT світіння [{crtEffect ? 'ON' : 'OFF'}]</span> },
+                    { id: '1-6', text: 'light : ', suffix: <span className="font-bold text-[#00ff41]">Підсвічування [{lightState.toUpperCase()}] (lton / ltoff)</span> },
                   ]}
                 />
               </div>
@@ -1344,57 +1418,131 @@ export default function App() {
         {/* ================= SCREEN 4: SEARCH RESULTS ================= */}
         {screen.type === 'search' && (
           <div className="space-y-4">
-            <div className="border-b border-[#00ff41]/30 pb-2">
-              <div className="font-bold text-sm md:text-base">
-                <TypewriterText
-                  key={`search-query-${screen.query}-${language}-${translation}`}
-                  text={language === 'en' ? `SEARCH RESULTS [${translation.toUpperCase()}]: "${screen.query}"` : `РЕЗУЛЬТАТИ ПОШУКУ [${translation.toUpperCase()}]: "${screen.query}"`}
-                  speed={16}
-                />
-              </div>
-              <div className="opacity-70 text-xs pt-1">
-                {language === 'en'
-                  ? `Matches found: ${screen.results.length} • Type result number (e.g. 1) or reference (e.g. ${screen.results[0] ? `${CANONICAL_BOOKS.find(b => b.id === screen.results[0].bookId)?.number || 43} ${screen.results[0].chapter} ${screen.results[0].verse}` : '43 3 16'}) to open:`
-                  : `Знайдено збігів: ${screen.results.length} • Введіть номер у списку (напр. 1) або команду вірша (напр. ${screen.results[0] ? `${CANONICAL_BOOKS.find(b => b.id === screen.results[0].bookId)?.number || 43} ${screen.results[0].chapter} ${screen.results[0].verse}` : '43 3 16'}):`}
-              </div>
-            </div>
+            {!screen.query ? (
+              <div className="space-y-4 py-2">
+                <div className="border-b border-[#00ff41]/30 pb-2">
+                  <div className="font-bold text-sm md:text-base">
+                    <TypewriterText
+                      key={`search-prompt-${language}-${translation}`}
+                      text={language === 'en' ? `SCRIPTURE TEXT SEARCH [${translation.toUpperCase()}]` : `ПОШУК СЛІВ ТА ФРАЗ У БІБЛІЇ [${translation.toUpperCase()}]`}
+                      speed={16}
+                    />
+                  </div>
+                  <div className="opacity-75 text-xs pt-1">
+                    {language === 'en'
+                      ? 'Search across all 66 books of the Old and New Testaments:'
+                      : 'Швидкий повнотекстовий пошук по всіх 66 книгах Старого та Нового Заповітів:'}
+                  </div>
+                </div>
 
-            {screen.results.length === 0 ? (
-              <div className="opacity-70 text-xs py-4">
-                <TypewriterText 
-                  text={language === 'en' ? `Nothing found for "${screen.query}" in ${translation.toUpperCase()}.` : `Нічого не знайдено за запитом "${screen.query}" у ${translation.toUpperCase()}.`} 
-                  speed={32} 
-                />
+                <div className="space-y-3 p-3.5 border border-[#00ff41]/30 bg-[#00ff41]/5 text-xs md:text-sm">
+                  <div className="font-bold text-[#00ff41] uppercase tracking-wider text-xs">
+                    {language === 'en' ? 'HOW TO SEARCH:' : 'ЯК ШУКАТИ:'}
+                  </div>
+                  <div className="space-y-2 opacity-90 pl-1 text-xs">
+                    <div>
+                      <span className="font-bold text-[#00ff41]">1. {language === 'en' ? 'Direct word/phrase:' : 'Пряме слово або фраза:'}</span>
+                      <p className="opacity-80 pl-3">{language === 'en' ? 'Simply enter any word (e.g. love, peace, light, God is love)' : 'Просто введіть будь-яке слово (напр. любов, мир, світло, Бог є любов)'}</p>
+                    </div>
+                    <div>
+                      <span className="font-bold text-[#00ff41]">2. {language === 'en' ? 'Command prefixes:' : 'Командні префікси:'}</span>
+                      <p className="opacity-80 pl-3">
+                        <code className="text-[#00ff41]">search &lt;query&gt;</code>, <code className="text-[#00ff41]">пошук &lt;запит&gt;</code>, <code className="text-[#00ff41]">/&lt;запит&gt;</code>
+                      </p>
+                    </div>
+                    <div>
+                      <span className="font-bold text-[#00ff41]">3. {language === 'en' ? 'Quick examples (click to search):' : 'Швидкі приклади (натисніть для пошуку):'}</span>
+                      <div className="flex flex-wrap gap-2 pt-1.5 pl-3">
+                        {['любов', 'світло', 'віра', 'надія', 'хліб життя', 'благодать', 'мир'].map(sample => (
+                          <button
+                            key={sample}
+                            type="button"
+                            onClick={() => handleCommand(`search ${sample}`)}
+                            className="px-2 py-0.5 border border-[#00ff41]/40 bg-[#00ff41]/10 hover:bg-[#00ff41]/30 hover:border-[#00ff41] text-[#00ff41] font-mono text-xs rounded transition-colors"
+                          >
+                            {sample}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             ) : (
-              <div className="space-y-3">
-                <MultiLineTypewriter
-                  key={`search-res-${screen.query}-${language}-${translation}`}
-                  speed={20}
-                  chunkSize={2}
-                  lines={screen.results.map((r, idx) => {
-                    const b = CANONICAL_BOOKS.find(item => item.id === r.bookId);
-                    const bNum = b ? b.number : 1;
-                    const bookDisplayName = language === 'en' ? (b?.nameEng || r.bookName) : (b?.nameUkr || r.bookName);
-                    return {
-                      id: idx,
-                      prefix: (
-                        <div className="font-bold text-xs flex items-center justify-between pb-1 border-b border-[#00ff41]/20 mb-1">
-                          <span className="flex items-center space-x-1.5">
-                            <span className="text-[#00ff41] bg-[#00ff41]/20 px-1 py-0.5 rounded font-mono">[{idx + 1}]</span>
-                            <span>* {bookDisplayName} {r.chapter}:{r.verse}</span>
-                          </span>
-                          <code className="text-[#00ff41] opacity-75 font-mono text-[11px]">
-                            {language === 'en' ? `type > ${idx + 1} or ${bNum} ${r.chapter} ${r.verse}` : `введіть > ${idx + 1} або ${bNum} ${r.chapter} ${r.verse}`}
-                          </code>
-                        </div>
-                      ),
-                      text: language === 'en' ? (r.textEng || r.textUkr) : r.textUkr,
-                      className: "p-2.5 border border-[#00ff41]/30 bg-[#00ff41]/5 hover:bg-[#00ff41]/15 hover:border-[#00ff41]/70 transition-colors cursor-pointer rounded space-y-1 text-xs md:text-sm leading-relaxed"
-                    };
-                  })}
-                />
-              </div>
+              <>
+                <div className="border-b border-[#00ff41]/30 pb-2">
+                  <div className="font-bold text-sm md:text-base">
+                    <TypewriterText
+                      key={`search-query-${screen.query}-${language}-${translation}`}
+                      text={language === 'en' ? `SEARCH RESULTS [${translation.toUpperCase()}]: "${screen.query}"` : `РЕЗУЛЬТАТИ ПОШУКУ [${translation.toUpperCase()}]: "${screen.query}"`}
+                      speed={16}
+                    />
+                  </div>
+                  <div className="opacity-70 text-xs pt-1">
+                    {screen.results.length > 0 && (
+                      language === 'en'
+                        ? `Matches found: ${screen.results.length} • Type result number (e.g. 1) or click on verse to open:`
+                        : `Знайдено збігів: ${screen.results.length} • Введіть номер у списку (напр. 1) або натисніть на вірш:`
+                    )}
+                  </div>
+                </div>
+
+                {screen.results.length === 0 ? (
+                  <div className="opacity-70 text-xs py-4 space-y-2">
+                    <TypewriterText 
+                      text={language === 'en' ? `Nothing found for "${screen.query}" in ${translation.toUpperCase()}.` : `Нічого не знайдено за запитом "${screen.query}" у ${translation.toUpperCase()}.`} 
+                      speed={32} 
+                    />
+                    <p className="opacity-60 text-[11px]">
+                      {language === 'en' ? 'Try searching for shorter root words or another translation (ubio / cuv).' : 'Спробуйте спростити пошукове слово або переключити переклад (ubio / cuv).'}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <MultiLineTypewriter
+                      key={`search-res-${screen.query}-${language}-${translation}`}
+                      speed={20}
+                      chunkSize={2}
+                      lines={screen.results.map((r, idx) => {
+                        const b = CANONICAL_BOOKS.find(item => item.id === r.bookId);
+                        const bNum = b ? b.number : 1;
+                        const bookDisplayName = language === 'en' ? (b?.nameEng || r.bookName) : (b?.nameUkr || r.bookName);
+                        const openThisVerse = () => {
+                          if (b) {
+                            setLightState('fade');
+                            setHighlightKey(Date.now());
+                            navigateTo({
+                              type: 'chapter',
+                              book: b,
+                              chapter: r.chapter,
+                              verse: r.verse
+                            });
+                          }
+                        };
+                        return {
+                          id: idx,
+                          prefix: (
+                            <div 
+                              onClick={openThisVerse}
+                              className="font-bold text-xs flex items-center justify-between pb-1 border-b border-[#00ff41]/20 mb-1 cursor-pointer"
+                            >
+                              <span className="flex items-center space-x-1.5">
+                                <span className="text-[#00ff41] bg-[#00ff41]/20 px-1 py-0.5 rounded font-mono">[{idx + 1}]</span>
+                                <span>* {bookDisplayName} {r.chapter}:{r.verse}</span>
+                              </span>
+                              <code className="text-[#00ff41] opacity-75 font-mono text-[11px]">
+                                {language === 'en' ? `type > ${idx + 1} or ${bNum} ${r.chapter} ${r.verse}` : `введіть > ${idx + 1} або ${bNum} ${r.chapter} ${r.verse}`}
+                              </code>
+                            </div>
+                          ),
+                          text: language === 'en' ? (r.textEng || r.textUkr) : r.textUkr,
+                          className: "p-2.5 border border-[#00ff41]/30 bg-[#00ff41]/5 hover:bg-[#00ff41]/15 hover:border-[#00ff41]/70 transition-colors cursor-pointer rounded space-y-1 text-xs md:text-sm leading-relaxed"
+                        };
+                      })}
+                    />
+                  </div>
+                )}
+              </>
             )}
 
             <div className="pt-4 text-xs opacity-75 border-t border-[#00ff41]/20 flex flex-wrap items-center justify-between gap-2">
@@ -1462,6 +1610,10 @@ export default function App() {
                 <div>
                   <span className="font-bold text-[#00ff41]">res</span> ({language === 'en' ? 'or' : 'або'} <span className="font-bold text-[#00ff41]">reset</span> / <span className="font-bold text-[#00ff41]">cls</span>)
                   <p className="opacity-75">{language === 'en' ? 'Reset terminal screen to home screen' : 'Повне скидання (ресет) терміналу та повернення на головний екран'}</p>
+                </div>
+                <div>
+                  <span className="font-bold text-[#00ff41]">+</span> / <span className="font-bold text-[#00ff41]">-</span> / <span className="font-bold text-[#00ff41]">0</span>
+                  <p className="opacity-75">{language === 'en' ? 'Zoom & UI scale: + increase, - decrease, 0 reset to 100%' : 'Масштаб інтерфейсу: + збільшити, - зменшити, 0 скинути до 100%'}</p>
                 </div>
                 <div>
                   <span className="font-bold text-[#00ff41]">sound</span> / <span className="font-bold text-[#00ff41]">crt</span>

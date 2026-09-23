@@ -178,6 +178,14 @@ export function getChapterVerses(book: BookInfo, chapter: number, translation: T
   ];
 }
 
+function normalizeForSearch(str: string): string {
+  return str
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 /**
  * Search across the entire Bible in the chosen translation
  */
@@ -188,7 +196,10 @@ export function searchBible(
   const cleanQ = query.trim().toLowerCase();
   if (!cleanQ) return [];
 
-  const maxResults = options?.limit || 60;
+  const normQ = normalizeForSearch(cleanQ);
+  if (!normQ) return [];
+
+  const maxResults = options?.limit || 80;
   const translation = options?.translation || 'ubio';
   const results: SearchResult[] = [];
 
@@ -205,7 +216,14 @@ export function searchBible(
       const verses = data[ch.toString()] || [];
       for (let idx = 0; idx < verses.length; idx++) {
         const text = verses[idx];
-        if (text && text.toLowerCase().includes(cleanQ)) {
+        if (!text) continue;
+        const lowerText = text.toLowerCase();
+        const normText = normalizeForSearch(text);
+
+        // Exact phrase match: words must appear in exact order and contiguity
+        const isMatch = lowerText.includes(cleanQ) || normText.includes(normQ);
+
+        if (isMatch) {
           results.push({
             bookId: book.id,
             bookName: book.nameUkr,
