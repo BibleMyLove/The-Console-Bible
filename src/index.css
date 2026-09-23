@@ -31,14 +31,6 @@
   text-shadow: 0 0 4px rgba(34, 197, 94, 0.6), 0 0 10px rgba(34, 197, 94, 0.3);
 }
 
-.crt-bloom-amber {
-  text-shadow: 0 0 4px rgba(245, 158, 11, 0.6), 0 0 10px rgba(245, 158, 11, 0.3);
-}
-
-.crt-bloom-cyan {
-  text-shadow: 0 0 4px rgba(6, 182, 212, 0.6), 0 0 10px rgba(6, 182, 212, 0.3);
-}
-
 /* Blinking terminal cursor */
 @keyframes terminalBlink {
   0%, 49% { opacity: 1; }

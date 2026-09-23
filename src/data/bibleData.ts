@@ -1,13 +1,46 @@
 import { BookInfo, Verse, SearchResult } from '../types';
 import { CANONICAL_BOOKS } from './canonicalBooks';
 
+export type TranslationType = 'ubio' | 'cuv';
+
+export interface TranslationMeta {
+  id: TranslationType;
+  name: string;
+  shortName: string;
+  descriptionEng: string;
+  descriptionUkr: string;
+}
+
+export const TRANSLATIONS: Record<TranslationType, TranslationMeta> = {
+  ubio: {
+    id: 'ubio',
+    name: 'Переклад Івана Огієнка (1962)',
+    shortName: 'UBIO',
+    descriptionEng: 'Ukrainian Bible (Ivan Ohienko Translation, 1962)',
+    descriptionUkr: 'Українська Біблія (Переклад Івана Огієнка, 1962)'
+  },
+  cuv: {
+    id: 'cuv',
+    name: 'Сучасний український переклад (CUV)',
+    shortName: 'CUV',
+    descriptionEng: 'Contemporary Ukrainian Version (CUV)',
+    descriptionUkr: 'Сучасний український переклад (CUV)'
+  }
+};
+
 // Import all 66 Ukrainian Bible JSON books from /src/ubio/
 const ubioModules = import.meta.glob<Record<string, string[]>>('../ubio/*.json', {
   eager: true,
   import: 'default'
 });
 
-// Map book ID from canonicalBooks to the corresponding ubio filename
+// Import all 66 Ukrainian Bible JSON books from /src/cuv/
+const cuvModules = import.meta.glob<Record<string, string[]>>('../cuv/*.json', {
+  eager: true,
+  import: 'default'
+});
+
+// Map book ID from canonicalBooks to the corresponding filename
 export const UBIO_FILE_MAP: Record<string, string> = {
   gen: 'gen',
   exo: 'exod',
@@ -77,8 +110,9 @@ export const UBIO_FILE_MAP: Record<string, string> = {
   rev: 'rev',
 };
 
-// Index data by normalized file key
+// Index data by normalized file key for both translations
 const ubioData: Record<string, Record<string, string[]>> = {};
+const cuvData: Record<string, Record<string, string[]>> = {};
 
 for (const path in ubioModules) {
   const match = path.match(/\/([^/]+)\.json$/);
@@ -88,19 +122,28 @@ for (const path in ubioModules) {
   }
 }
 
-/**
- * Get raw chapter mapping for a specific book ID
- */
-export function getBookData(bookId: string): Record<string, string[]> | undefined {
-  const fileKey = UBIO_FILE_MAP[bookId] || bookId;
-  return ubioData[fileKey];
+for (const path in cuvModules) {
+  const match = path.match(/\/([^/]+)\.json$/);
+  if (match) {
+    const key = match[1];
+    cuvData[key] = cuvModules[path];
+  }
 }
 
 /**
- * Get the total number of chapters in a book from the ubio files
+ * Get raw chapter mapping for a specific book ID and translation
  */
-export function getBookChapterCount(bookId: string): number {
-  const data = getBookData(bookId);
+export function getBookData(bookId: string, translation: TranslationType = 'ubio'): Record<string, string[]> | undefined {
+  const fileKey = UBIO_FILE_MAP[bookId] || bookId;
+  const store = translation === 'cuv' ? cuvData : ubioData;
+  return store[fileKey] || ubioData[fileKey] || cuvData[fileKey];
+}
+
+/**
+ * Get the total number of chapters in a book
+ */
+export function getBookChapterCount(bookId: string, translation: TranslationType = 'ubio'): number {
+  const data = getBookData(bookId, translation);
   if (data) {
     return Object.keys(data).length;
   }
@@ -109,10 +152,10 @@ export function getBookChapterCount(bookId: string): number {
 }
 
 /**
- * Get all verses for a given book and chapter from authentic ubio translation
+ * Get all verses for a given book and chapter from the selected translation
  */
-export function getChapterVerses(book: BookInfo, chapter: number): Verse[] {
-  const data = getBookData(book.id);
+export function getChapterVerses(book: BookInfo, chapter: number, translation: TranslationType = 'ubio'): Verse[] {
+  const data = getBookData(book.id, translation);
   if (data && data[chapter.toString()]) {
     const rawVerses = data[chapter.toString()];
     return rawVerses.map((text, idx) => ({
@@ -136,23 +179,24 @@ export function getChapterVerses(book: BookInfo, chapter: number): Verse[] {
 }
 
 /**
- * Search across the entire Ukrainian Bible (all 66 books)
+ * Search across the entire Bible in the chosen translation
  */
 export function searchBible(
   query: string,
-  options?: { testament?: 'OT' | 'NT'; bookId?: string; limit?: number }
+  options?: { testament?: 'OT' | 'NT'; bookId?: string; limit?: number; translation?: TranslationType }
 ): SearchResult[] {
   const cleanQ = query.trim().toLowerCase();
   if (!cleanQ) return [];
 
   const maxResults = options?.limit || 60;
+  const translation = options?.translation || 'ubio';
   const results: SearchResult[] = [];
 
   for (const book of CANONICAL_BOOKS) {
     if (options?.testament && book.testament !== options.testament) continue;
     if (options?.bookId && book.id !== options.bookId) continue;
 
-    const data = getBookData(book.id);
+    const data = getBookData(book.id, translation);
     if (!data) continue;
 
     const chapterNums = Object.keys(data).map(Number).sort((a, b) => a - b);
@@ -184,11 +228,11 @@ export function searchBible(
 }
 
 /**
- * Get a random verse from the complete authentic Ukrainian Bible
+ * Get a random verse from the complete authentic Bible
  */
-export function getRandomVerse(): { ref: string; bookId: string; chapter: number; verse: number; text: string } {
+export function getRandomVerse(translation: TranslationType = 'ubio'): { ref: string; bookId: string; chapter: number; verse: number; text: string } {
   const randomBook = CANONICAL_BOOKS[Math.floor(Math.random() * CANONICAL_BOOKS.length)];
-  const data = getBookData(randomBook.id);
+  const data = getBookData(randomBook.id, translation);
   
   if (data) {
     const chapters = Object.keys(data);

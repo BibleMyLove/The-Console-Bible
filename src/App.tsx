@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { BookInfo, Verse, SearchResult } from './types';
 import { CANONICAL_BOOKS, findBookByQuery } from './data/canonicalBooks';
-import { getChapterVerses, searchBible, getRandomVerse } from './data/bibleData';
+import { getChapterVerses, searchBible, getRandomVerse, TranslationType, TRANSLATIONS } from './data/bibleData';
 import { terminalSounds } from './services/soundEffects';
 import { TypewriterText, MultiLineTypewriter } from './components/TypewriterText';
 
@@ -51,7 +51,7 @@ const TerminalCommandLine: React.FC<TerminalCommandLineProps> = React.memo(({ la
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={() => terminalSounds.playKeyClick()}
-        placeholder={language === 'en' ? "Enter command (e.g. bc, sc, lc, ac, 43 3 16)..." : "Введіть команду (напр. bc, sc, lc, ac, 43 3 16)..."}
+        placeholder={language === 'en' ? "Enter command (e.g. bc, sc, lc, ac, ubio, cuv, 43 3 16)..." : "Введіть команду (напр. bc, sc, lc, ac, ubio, cuv, 43 3 16)..."}
         aria-label="Terminal command input"
         className="flex-1 bg-transparent text-[#00ff41] font-mono text-sm md:text-base focus:outline-none placeholder:text-[#00ff41]/30 caret-[#00ff41]"
         autoComplete="off"
@@ -61,8 +61,12 @@ const TerminalCommandLine: React.FC<TerminalCommandLineProps> = React.memo(({ la
   );
 });
 
+const OLD_TESTAMENT = CANONICAL_BOOKS.filter(b => b.testament === 'OT');
+const NEW_TESTAMENT = CANONICAL_BOOKS.filter(b => b.testament === 'NT');
+
 export default function App() {
   const [language, setLanguage] = useState<Language>('en');
+  const [translation, setTranslation] = useState<TranslationType>('ubio');
   const [screen, setScreen] = useState<ScreenState>({ type: 'home' });
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [crtEffect, setCrtEffect] = useState(true);
@@ -143,29 +147,10 @@ export default function App() {
     };
   }, []);
 
-  // Scroll to verse or top on screen change
+  // Scroll to top on screen change
   useEffect(() => {
-    if (screen.type === 'chapter' && screen.verse) {
-      const scrollToVerse = () => {
-        const el = document.getElementById(`verse-${screen.verse}`);
-        if (el && contentRef.current) {
-          const containerRect = contentRef.current.getBoundingClientRect();
-          const elRect = el.getBoundingClientRect();
-          const headerEl = document.getElementById('chapter-header');
-          const headerHeight = headerEl ? headerEl.offsetHeight : 44;
-          
-          const targetScroll = contentRef.current.scrollTop + (elRect.top - containerRect.top) - headerHeight - 4;
-          contentRef.current.scrollTop = Math.max(0, targetScroll);
-        }
-      };
-
-      scrollToVerse();
-      const raf = requestAnimationFrame(scrollToVerse);
-      return () => cancelAnimationFrame(raf);
-    } else {
-      if (contentRef.current) {
-        contentRef.current.scrollTop = 0;
-      }
+    if (contentRef.current) {
+      contentRef.current.scrollTop = 0;
     }
   }, [screen, highlightKey]);
 
@@ -195,6 +180,26 @@ export default function App() {
       return;
     }
 
+    // Translation switch: ubio (Ivan Ohienko Translation)
+    if (lower === 'ubio' || lower === 'убіо' || lower === 'ogienko' || lower === 'огієнко') {
+      setTranslation('ubio');
+      if (screen.type === 'search') {
+        const results = searchBible(screen.query, { translation: 'ubio' });
+        setScreen({ type: 'search', query: screen.query, results });
+      }
+      return;
+    }
+
+    // Translation switch: cuv (Contemporary Ukrainian Version)
+    if (lower === 'cuv' || lower === 'цув' || lower === 'кув' || lower === 'сучасний' || lower === 'contemporary') {
+      setTranslation('cuv');
+      if (screen.type === 'search') {
+        const results = searchBible(screen.query, { translation: 'cuv' });
+        setScreen({ type: 'search', query: screen.query, results });
+      }
+      return;
+    }
+
     // Language switch: eng / en
     if (lower === 'eng' || lower === 'en' || lower === 'english' || lower === 'англ' || lower === 'англійська') {
       setLanguage('en');
@@ -207,7 +212,7 @@ export default function App() {
       return;
     }
 
-    // Selecting language inside lc screen
+    // Selecting language / translation inside lc screen
     if (screen.type === 'lc') {
       if (lower === '1' || lower === '[1]' || lower === 'eng' || lower === 'en') {
         setLanguage('en');
@@ -215,6 +220,14 @@ export default function App() {
       }
       if (lower === '2' || lower === '[2]' || lower === 'ukr' || lower === 'uk' || lower === 'ua') {
         setLanguage('ukr');
+        return;
+      }
+      if (lower === '3' || lower === '[3]' || lower === 'ubio' || lower === 'убіо') {
+        setTranslation('ubio');
+        return;
+      }
+      if (lower === '4' || lower === '[4]' || lower === 'cuv' || lower === 'цув' || lower === 'кув') {
+        setTranslation('cuv');
         return;
       }
     }
@@ -260,6 +273,29 @@ export default function App() {
       const sub = scMatch && scMatch[1] ? parseInt(scMatch[1], 10) : undefined;
       navigateTo({ type: 'sc', subCategory: sub && sub >= 1 && sub <= 2 ? sub : undefined });
       return;
+    }
+
+    // Selecting result inside search screen: e.g. "1", "[1]", "2", etc.
+    if (screen.type === 'search') {
+      const numMatch = lower.match(/^\[?(\d+)\]?$/);
+      if (numMatch) {
+        const idx = parseInt(numMatch[1], 10) - 1;
+        if (idx >= 0 && idx < screen.results.length) {
+          const matchResult = screen.results[idx];
+          const foundBook = CANONICAL_BOOKS.find(b => b.id === matchResult.bookId);
+          if (foundBook) {
+            setLightState('fade');
+            setHighlightKey(Date.now());
+            navigateTo({
+              type: 'chapter',
+              book: foundBook,
+              chapter: matchResult.chapter,
+              verse: matchResult.verse
+            });
+            return;
+          }
+        }
+      }
     }
 
     // Selecting subcategory in bc screen: 1, 2, 3, 4 (or [1], [2], [3], [4])
@@ -349,7 +385,7 @@ export default function App() {
       if (screen.type === 'chapter') {
         const targetVerse = lightOnVerseMatch ? parseInt(lightOnVerseMatch[1], 10) : undefined;
         if (targetVerse !== undefined) {
-          const currentVerses = getChapterVerses(screen.book, screen.chapter);
+          const currentVerses = getChapterVerses(screen.book, screen.chapter, translation);
           if (targetVerse >= 1 && targetVerse <= currentVerses.length) {
             setScreen({ type: 'chapter', book: screen.book, chapter: screen.chapter, verse: targetVerse });
           }
@@ -379,7 +415,7 @@ export default function App() {
 
     // Random verse
     if (lower === 'random' || lower === 'вірш' || lower === 'daily') {
-      const rand = getRandomVerse();
+      const rand = getRandomVerse(translation);
       const b = CANONICAL_BOOKS.find(item => item.id === rand.bookId) || CANONICAL_BOOKS[0];
       setLightState('fade');
       setHighlightKey(Date.now());
@@ -414,7 +450,7 @@ export default function App() {
       // e.g. "16" -> jump to verse 16 of current chapter!
       const singleNum = parseInt(cmd, 10);
       if (!isNaN(singleNum) && cmd.trim() === singleNum.toString()) {
-        const currentVerses = getChapterVerses(screen.book, screen.chapter);
+        const currentVerses = getChapterVerses(screen.book, screen.chapter, translation);
         if (singleNum >= 1 && singleNum <= currentVerses.length) {
           setLightState('fade');
           setHighlightKey(Date.now());
@@ -484,7 +520,7 @@ export default function App() {
         if (screen.verse !== undefined) {
           setLightState('fade');
           setHighlightKey(Date.now());
-          const currentVerses = getChapterVerses(screen.book, screen.chapter);
+          const currentVerses = getChapterVerses(screen.book, screen.chapter, translation);
           if (screen.verse < currentVerses.length) {
             navigateTo({ type: 'chapter', book: screen.book, chapter: screen.chapter, verse: screen.verse + 1 });
           } else if (screen.chapter < screen.book.chaptersCount) {
@@ -511,12 +547,12 @@ export default function App() {
           if (screen.verse > 1) {
             navigateTo({ type: 'chapter', book: screen.book, chapter: screen.chapter, verse: screen.verse - 1 });
           } else if (screen.chapter > 1) {
-            const prevChVerses = getChapterVerses(screen.book, screen.chapter - 1);
+            const prevChVerses = getChapterVerses(screen.book, screen.chapter - 1, translation);
             navigateTo({ type: 'chapter', book: screen.book, chapter: screen.chapter - 1, verse: prevChVerses.length });
           } else {
             const prevB = CANONICAL_BOOKS.find(b => b.number === screen.book.number - 1);
             if (prevB) {
-              const lastChVerses = getChapterVerses(prevB, prevB.chaptersCount);
+              const lastChVerses = getChapterVerses(prevB, prevB.chaptersCount, translation);
               navigateTo({ type: 'chapter', book: prevB, chapter: prevB.chaptersCount, verse: lastChVerses.length });
             }
           }
@@ -537,7 +573,7 @@ export default function App() {
     if (lower.startsWith('search ') || lower.startsWith('знайти ') || lower.startsWith('/')) {
       const q = cmd.replace(/^(search|знайти|\/)\s*/i, '').trim();
       if (q) {
-        const results = searchBible(q);
+        const results = searchBible(q, { translation });
         navigateTo({ type: 'search', query: q, results });
         return;
       }
@@ -572,13 +608,10 @@ export default function App() {
     navigateTo({ type: 'not_found', command: cmd });
   };
 
-  const oldTestament = CANONICAL_BOOKS.filter(b => b.testament === 'OT');
-  const newTestament = CANONICAL_BOOKS.filter(b => b.testament === 'NT');
-
-  const filterBook = (b: (typeof CANONICAL_BOOKS)[0]) => {
-    if (!helpFilter.trim()) return true;
+  const filteredOT = React.useMemo(() => {
+    if (!helpFilter.trim()) return OLD_TESTAMENT;
     const q = helpFilter.trim().toLowerCase();
-    return (
+    return OLD_TESTAMENT.filter(b => 
       b.number.toString() === q ||
       b.nameUkr.toLowerCase().includes(q) ||
       b.nameEng.toLowerCase().includes(q) ||
@@ -586,10 +619,20 @@ export default function App() {
       b.shortEng.toLowerCase().includes(q) ||
       b.aliases.some(a => a.toLowerCase().includes(q))
     );
-  };
+  }, [helpFilter]);
 
-  const filteredOT = oldTestament.filter(filterBook);
-  const filteredNT = newTestament.filter(filterBook);
+  const filteredNT = React.useMemo(() => {
+    if (!helpFilter.trim()) return NEW_TESTAMENT;
+    const q = helpFilter.trim().toLowerCase();
+    return NEW_TESTAMENT.filter(b => 
+      b.number.toString() === q ||
+      b.nameUkr.toLowerCase().includes(q) ||
+      b.nameEng.toLowerCase().includes(q) ||
+      b.shortUkr.toLowerCase().includes(q) ||
+      b.shortEng.toLowerCase().includes(q) ||
+      b.aliases.some(a => a.toLowerCase().includes(q))
+    );
+  }, [helpFilter]);
 
   const formatDateTime = (date: Date, lang: Language) => {
     const yyyy = date.getFullYear();
@@ -618,8 +661,8 @@ export default function App() {
       <div className="flex flex-wrap items-center justify-between border-b border-[#00ff41]/30 pb-2 mb-3 text-xs md:text-sm shrink-0 gap-2">
         <div className="font-bold tracking-widest uppercase flex items-center space-x-2">
           <span>{language === 'en' ? 'THE HOLY BIBLE' : 'THE HOLY BIBLE // СВЯТА БІБЛІЯ'}</span>
-          <span className="text-[10px] opacity-60 border border-[#00ff41]/40 px-1 py-0.2">
-            [{language.toUpperCase()}]
+          <span className="text-[10px] opacity-70 border border-[#00ff41]/40 px-1 py-0.5">
+            [{language.toUpperCase()} // {translation.toUpperCase()}]
           </span>
         </div>
         <div className="opacity-90 font-mono text-xs flex items-center space-x-2 tracking-wider">
@@ -698,12 +741,12 @@ export default function App() {
           </div>
         )}
 
-        {/* ================= SCREEN: LANGUAGE COMMANDS (lc WITH TYPEWRITER) ================= */}
+        {/* ================= SCREEN: LANGUAGE & TRANSLATIONS (lc WITH TYPEWRITER) ================= */}
         {screen.type === 'lc' && (
           <div className="py-6 select-text">
             <MultiLineTypewriter
-              key={`screen-lc-${language}`}
-              speed={40}
+              key={`screen-lc-${language}-${translation}`}
+              speed={36}
               chunkSize={1}
               lines={[
                 {
@@ -721,6 +764,24 @@ export default function App() {
                   suffix: (
                     <span className={`font-bold ${language === 'ukr' ? 'text-[#00ff41] bg-[#00ff41]/20 px-1' : 'text-[#00ff41]'}`}>
                       ukr {language === 'ukr' ? '[ACTIVE]' : ''}
+                    </span>
+                  )
+                },
+                {
+                  id: 'ubio',
+                  text: language === 'en' ? 'Ukrainian Bible (Ohienko, 1962): ' : 'Переклад Івана Огієнка (1962): ',
+                  suffix: (
+                    <span className={`font-bold ${translation === 'ubio' ? 'text-[#00ff41] bg-[#00ff41]/20 px-1' : 'text-[#00ff41]'}`}>
+                      ubio {translation === 'ubio' ? '[ACTIVE]' : ''}
+                    </span>
+                  )
+                },
+                {
+                  id: 'cuv',
+                  text: language === 'en' ? 'Contemporary Ukrainian Version: ' : 'Сучасний український переклад: ',
+                  suffix: (
+                    <span className={`font-bold ${translation === 'cuv' ? 'text-[#00ff41] bg-[#00ff41]/20 px-1' : 'text-[#00ff41]'}`}>
+                      cuv {translation === 'cuv' ? '[ACTIVE]' : ''}
                     </span>
                   )
                 }
@@ -755,10 +816,11 @@ export default function App() {
                 { id: 'ch', text: 'ch - Read full chapter when viewing an individual verse (alias: chapter)' },
                 { id: 'cls', text: 'cls - Clear and reset terminal screen (alias: res, reset, clear)' },
                 { id: 'crt', text: 'crt - Toggle CRT scanlines and phosphor bloom visual effect' },
+                { id: 'cuv', text: 'cuv - Switch Bible translation to Contemporary Ukrainian Version (CUV)' },
                 { id: 'eng', text: 'eng - Switch terminal interface language to English (alias: en)' },
                 { id: 'help', text: 'help - View complete index of all 66 book numbers, abbreviations and aliases (alias: man)' },
                 { id: 'home', text: 'home - Return to the main minimalist home screen (alias: menu)' },
-                { id: 'lc', text: 'lc - View interface language selection commands' },
+                { id: 'lc', text: 'lc - View interface language and translation selection commands' },
                 { id: 'light-on', text: 'light on - Turn ON verse highlight (alias: lighton, lton, lt on)' },
                 { id: 'light-off', text: 'light off - Turn OFF verse highlight (alias: lightoff, ltoff, lt off)' },
                 { id: 'new', text: 'new - List 27 books of the New Testament (books #40 - #66, alias: nt)' },
@@ -771,6 +833,7 @@ export default function App() {
                 { id: 'sc12', text: 'sc <1-2> - Jump directly to Settings sub-category (1, 2)' },
                 { id: 'search', text: 'search <query> - Search Scripture for text or phrases (alias: / <query>)' },
                 { id: 'sound', text: 'sound - Toggle keyboard typing sound effects on or off' },
+                { id: 'ubio', text: 'ubio - Switch Bible translation to Ivan Ohienko (UBIO, 1962)' },
                 { id: 'ukr', text: 'ukr - Switch terminal interface language to Ukrainian (alias: ua, uk)' },
                 { id: 'num-b', text: '<book#> - Select chapter for book number (e.g. 43 for John, 1 for Genesis)' },
                 { id: 'num-bc', text: '<book#> <ch> - Open specific chapter (e.g. 43 3 for John 3, 1 1 for Genesis 1)' },
@@ -787,10 +850,11 @@ export default function App() {
                 { id: 'ch', text: 'ch - Читати всю главу цілком при перегляді окремого вірша (синонім: chapter)' },
                 { id: 'cls', text: 'cls - Очистити екран та скинути стан (синоніми: res, reset, clear)' },
                 { id: 'crt', text: 'crt - Перемикання CRT ефекту та світіння' },
+                { id: 'cuv', text: 'cuv - Перемкнути переклад на Сучасний український (CUV)' },
                 { id: 'eng', text: 'eng - Перемкнути мову інтерфейсу на англійську (синонім: en)' },
                 { id: 'help', text: 'help - Повний довідник номерів, назв та скорочень 66 книг (синонім: man)' },
                 { id: 'home', text: 'home - Повернутися на головний мінімалістичний екран (синонім: menu)' },
-                { id: 'lc', text: 'lc - Переглянути команди вибору мови' },
+                { id: 'lc', text: 'lc - Переглянути команди вибору мови та перекладів' },
                 { id: 'light-on', text: 'light on - Увімкнути підсвічування вірша (синоніми: lighton, lton, lt on)' },
                 { id: 'light-off', text: 'light off - Вимкнути підсвічування вірша (синоніми: lightoff, ltoff, lt off)' },
                 { id: 'new', text: 'new - Список 27 книг Нового Заповіту (книги №40 - №66, синонім: nt)' },
@@ -803,6 +867,7 @@ export default function App() {
                 { id: 'sc12', text: 'sc <1-2> - Прямий перехід до підкатегорії налаштувань (1, 2)' },
                 { id: 'search', text: 'search <запит> - Пошук тексту або фраз у Біблії (синонім: / <запит>)' },
                 { id: 'sound', text: 'sound - Перемикання звукових ефектів клавіатури' },
+                { id: 'ubio', text: 'ubio - Перемкнути переклад на Івана Огієнка (UBIO, 1962)' },
                 { id: 'ukr', text: 'ukr - Перемкнути мову інтерфейсу на українську (синоніми: ua, uk)' },
                 { id: 'num-b', text: '<номер_книги> - Вибрати главу для книги (напр. 43 для Івана, 1 для Буття)' },
                 { id: 'num-bc', text: '<книга#> <гл> - Відкрити конкретну главу (напр. 43 3 для Івана 3, 1 1 для Буття 1)' },
@@ -826,12 +891,12 @@ export default function App() {
                   { id: '1', text: 'Navigation & Progressive Jump: ', suffix: <span className="font-bold text-[#00ff41]">[1]</span> },
                   { id: '2', text: 'Catalogs & Testaments: ', suffix: <span className="font-bold text-[#00ff41]">[2]</span> },
                   { id: '3', text: 'Search & Discovery: ', suffix: <span className="font-bold text-[#00ff41]">[3]</span> },
-                  { id: '4', text: 'Reading Navigation: ', suffix: <span className="font-bold text-[#00ff41]">[4]</span> },
+                  { id: '4', text: 'Reading Navigation & Translations: ', suffix: <span className="font-bold text-[#00ff41]">[4]</span> },
                 ] : [
                   { id: '1', text: 'Навігація та швидкий перехід: ', suffix: <span className="font-bold text-[#00ff41]">[1]</span> },
                   { id: '2', text: 'Каталоги та Заповіти: ', suffix: <span className="font-bold text-[#00ff41]">[2]</span> },
                   { id: '3', text: 'Пошук та дослідження: ', suffix: <span className="font-bold text-[#00ff41]">[3]</span> },
-                  { id: '4', text: 'Керування читанням: ', suffix: <span className="font-bold text-[#00ff41]">[4]</span> },
+                  { id: '4', text: 'Керування читанням та переклади: ', suffix: <span className="font-bold text-[#00ff41]">[4]</span> },
                 ]}
               />
             ) : screen.subCategory === 1 ? (
@@ -900,7 +965,7 @@ export default function App() {
                     { id: '3-1', text: 'search <query> (/) : ', suffix: <span className="font-bold text-[#00ff41]">search love, / light</span> },
                     { id: '3-2', text: 'random (rand)      : ', suffix: <span className="font-bold text-[#00ff41]">Random inspirational verse</span> },
                   ] : [
-                    { id: '3-1', text: 'search <query> (/) : ', suffix: <span className="font-bold text-[#00ff41]">search любов, / світло</span> },
+                    { id: '3-1', text: 'search <запит> (/) : ', suffix: <span className="font-bold text-[#00ff41]">search любов, / світло</span> },
                     { id: '3-2', text: 'random (rand)      : ', suffix: <span className="font-bold text-[#00ff41]">Випадковий вірш</span> },
                   ]}
                 />
@@ -909,7 +974,7 @@ export default function App() {
               <div className="space-y-2">
                 <div className="font-bold text-[#00ff41] pb-1 border-b border-[#00ff41]/30 mb-2">
                   <TypewriterText 
-                    text={language === 'en' ? "Reading Navigation: [4]" : "Керування читанням: [4]"} 
+                    text={language === 'en' ? "Reading Navigation & Translations: [4]" : "Керування читанням та переклади: [4]"} 
                     speed={32} 
                   />
                 </div>
@@ -918,17 +983,19 @@ export default function App() {
                   speed={32}
                   chunkSize={1}
                   lines={language === 'en' ? [
-                    { id: '4-1', text: 'next (n)     : ', suffix: <span className="font-bold text-[#00ff41]">Next chapter or next verse</span> },
-                    { id: '4-2', text: 'prev (p)     : ', suffix: <span className="font-bold text-[#00ff41]">Previous chapter or previous verse</span> },
-                    { id: '4-3', text: 'bw (back)    : ', suffix: <span className="font-bold text-[#00ff41]">Return to previous window</span> },
-                    { id: '4-4', text: 'ch (chapter) : ', suffix: <span className="font-bold text-[#00ff41]">Full chapter reading mode</span> },
-                    { id: '4-5', text: 'light on/off : ', suffix: <span className="font-bold text-[#00ff41]">Verse light (lton / ltoff)</span> },
+                    { id: '4-1', text: 'ubio / cuv   : ', suffix: <span className="font-bold text-[#00ff41]">Switch translation (ubio or cuv)</span> },
+                    { id: '4-2', text: 'next (n)     : ', suffix: <span className="font-bold text-[#00ff41]">Next chapter or next verse</span> },
+                    { id: '4-3', text: 'prev (p)     : ', suffix: <span className="font-bold text-[#00ff41]">Previous chapter or previous verse</span> },
+                    { id: '4-4', text: 'bw (back)    : ', suffix: <span className="font-bold text-[#00ff41]">Return to previous window</span> },
+                    { id: '4-5', text: 'ch (chapter) : ', suffix: <span className="font-bold text-[#00ff41]">Full chapter reading mode</span> },
+                    { id: '4-6', text: 'light on/off : ', suffix: <span className="font-bold text-[#00ff41]">Verse light (lton / ltoff)</span> },
                   ] : [
-                    { id: '4-1', text: 'next (n)     : ', suffix: <span className="font-bold text-[#00ff41]">Наступний розділ або наступний вірш</span> },
-                    { id: '4-2', text: 'prev (p)     : ', suffix: <span className="font-bold text-[#00ff41]">Попередній розділ або попередній вірш</span> },
-                    { id: '4-3', text: 'bw (назад)   : ', suffix: <span className="font-bold text-[#00ff41]">Повернутися до попереднього вікна</span> },
-                    { id: '4-4', text: 'ch (chapter) : ', suffix: <span className="font-bold text-[#00ff41]">Режим читання всієї глави</span> },
-                    { id: '4-5', text: 'light on/off : ', suffix: <span className="font-bold text-[#00ff41]">Підсвічування вірша (lton / ltoff)</span> },
+                    { id: '4-1', text: 'ubio / cuv   : ', suffix: <span className="font-bold text-[#00ff41]">Перемикання перекладів (ubio або cuv)</span> },
+                    { id: '4-2', text: 'next (n)     : ', suffix: <span className="font-bold text-[#00ff41]">Наступний розділ або наступний вірш</span> },
+                    { id: '4-3', text: 'prev (p)     : ', suffix: <span className="font-bold text-[#00ff41]">Попередній розділ або попередній вірш</span> },
+                    { id: '4-4', text: 'bw (назад)   : ', suffix: <span className="font-bold text-[#00ff41]">Повернутися до попереднього вікна</span> },
+                    { id: '4-5', text: 'ch (chapter) : ', suffix: <span className="font-bold text-[#00ff41]">Режим читання всієї глави</span> },
+                    { id: '4-6', text: 'light on/off : ', suffix: <span className="font-bold text-[#00ff41]">Підсвічування вірша (lton / ltoff)</span> },
                   ]}
                 />
               </div>
@@ -945,10 +1012,10 @@ export default function App() {
                 speed={36}
                 chunkSize={1}
                 lines={language === 'en' ? [
-                  { id: '1', text: 'System & Audio: ', suffix: <span className="font-bold text-[#00ff41]">[1]</span> },
+                  { id: '1', text: 'System, Audio & Translations: ', suffix: <span className="font-bold text-[#00ff41]">[1]</span> },
                   { id: '2', text: 'Terminal Control & Manual: ', suffix: <span className="font-bold text-[#00ff41]">[2]</span> },
                 ] : [
-                  { id: '1', text: 'Система та аудіо: ', suffix: <span className="font-bold text-[#00ff41]">[1]</span> },
+                  { id: '1', text: 'Система, аудіо та переклади: ', suffix: <span className="font-bold text-[#00ff41]">[1]</span> },
                   { id: '2', text: 'Керування терміналом та довідник: ', suffix: <span className="font-bold text-[#00ff41]">[2]</span> },
                 ]}
               />
@@ -956,7 +1023,7 @@ export default function App() {
               <div className="space-y-2">
                 <div className="font-bold text-[#00ff41] pb-1 border-b border-[#00ff41]/30 mb-2">
                   <TypewriterText 
-                    text={language === 'en' ? "System & Audio: [1]" : "Система та аудіо: [1]"} 
+                    text={language === 'en' ? "System, Audio & Translations: [1]" : "Система, аудіо та переклади: [1]"} 
                     speed={32} 
                   />
                 </div>
@@ -965,13 +1032,17 @@ export default function App() {
                   speed={32}
                   chunkSize={1}
                   lines={language === 'en' ? [
-                    { id: '1-1', text: 'sound : ', suffix: <span className="font-bold text-[#00ff41]">Toggle keyboard typing sound [{soundEnabled ? 'ON' : 'OFF'}]</span> },
-                    { id: '1-2', text: 'crt   : ', suffix: <span className="font-bold text-[#00ff41]">Toggle CRT scanlines & glow [{crtEffect ? 'ON' : 'OFF'}]</span> },
-                    { id: '1-3', text: 'light : ', suffix: <span className="font-bold text-[#00ff41]">Verse light [{lightState.toUpperCase()}] (lton / ltoff)</span> },
+                    { id: '1-1', text: 'ubio  : ', suffix: <span className="font-bold text-[#00ff41]">Switch to Ivan Ohienko translation [{translation === 'ubio' ? 'ACTIVE' : 'READY'}]</span> },
+                    { id: '1-2', text: 'cuv   : ', suffix: <span className="font-bold text-[#00ff41]">Switch to Contemporary translation [{translation === 'cuv' ? 'ACTIVE' : 'READY'}]</span> },
+                    { id: '1-3', text: 'sound : ', suffix: <span className="font-bold text-[#00ff41]">Toggle keyboard typing sound [{soundEnabled ? 'ON' : 'OFF'}]</span> },
+                    { id: '1-4', text: 'crt   : ', suffix: <span className="font-bold text-[#00ff41]">Toggle CRT scanlines & glow [{crtEffect ? 'ON' : 'OFF'}]</span> },
+                    { id: '1-5', text: 'light : ', suffix: <span className="font-bold text-[#00ff41]">Verse light [{lightState.toUpperCase()}] (lton / ltoff)</span> },
                   ] : [
-                    { id: '1-1', text: 'sound : ', suffix: <span className="font-bold text-[#00ff41]">Перемикання звукових ефектів [{soundEnabled ? 'ON' : 'OFF'}]</span> },
-                    { id: '1-2', text: 'crt   : ', suffix: <span className="font-bold text-[#00ff41]">Перемикання CRT світіння [{crtEffect ? 'ON' : 'OFF'}]</span> },
-                    { id: '1-3', text: 'light : ', suffix: <span className="font-bold text-[#00ff41]">Підсвічування [{lightState.toUpperCase()}] (lton / ltoff)</span> },
+                    { id: '1-1', text: 'ubio  : ', suffix: <span className="font-bold text-[#00ff41]">Переклад Івана Огієнка [{translation === 'ubio' ? 'АКТИВНИЙ' : 'ГОТОВИЙ'}]</span> },
+                    { id: '1-2', text: 'cuv   : ', suffix: <span className="font-bold text-[#00ff41]">Сучасний український переклад [{translation === 'cuv' ? 'АКТИВНИЙ' : 'ГОТОВИЙ'}]</span> },
+                    { id: '1-3', text: 'sound : ', suffix: <span className="font-bold text-[#00ff41]">Перемикання звукових ефектів [{soundEnabled ? 'ON' : 'OFF'}]</span> },
+                    { id: '1-4', text: 'crt   : ', suffix: <span className="font-bold text-[#00ff41]">Перемикання CRT світіння [{crtEffect ? 'ON' : 'OFF'}]</span> },
+                    { id: '1-5', text: 'light : ', suffix: <span className="font-bold text-[#00ff41]">Підсвічування [{lightState.toUpperCase()}] (lton / ltoff)</span> },
                   ]}
                 />
               </div>
@@ -1036,7 +1107,7 @@ export default function App() {
                 <div className="text-xs opacity-60 font-mono">[type `old`]</div>
               </div>
               <div className="columns-1 sm:columns-2 md:columns-3 gap-x-6 pl-2 space-y-1 text-xs md:text-sm">
-                {oldTestament.map((b) => (
+                {OLD_TESTAMENT.map((b) => (
                   <div
                     key={b.id}
                     className="break-inside-avoid w-full text-left text-[#00ff41] flex items-center space-x-2 py-0.5"
@@ -1058,7 +1129,7 @@ export default function App() {
                 <div className="text-xs opacity-60 font-mono">[type `new`]</div>
               </div>
               <div className="columns-1 sm:columns-2 md:columns-3 gap-x-6 pl-2 space-y-1 text-xs md:text-sm">
-                {newTestament.map((b) => (
+                {NEW_TESTAMENT.map((b) => (
                   <div
                     key={b.id}
                     className="break-inside-avoid w-full text-left text-[#00ff41] flex items-center space-x-2 py-0.5"
@@ -1103,7 +1174,7 @@ export default function App() {
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 pt-2">
-              {(screen.testament === 'OT' ? oldTestament : newTestament).map((b) => (
+              {(screen.testament === 'OT' ? OLD_TESTAMENT : NEW_TESTAMENT).map((b) => (
                 <div
                   key={b.id}
                   className="p-2 border border-[#00ff41]/30 bg-[#00ff41]/5 text-left flex items-center justify-between"
@@ -1173,11 +1244,13 @@ export default function App() {
 
         {/* ================= SCREEN 3: CHAPTER VERSES READER ================= */}
         {screen.type === 'chapter' && (() => {
-          const chapterVerses = getChapterVerses(screen.book, screen.chapter);
+          const chapterVerses = getChapterVerses(screen.book, screen.chapter, translation);
           const verseIndex = screen.verse 
             ? chapterVerses.findIndex(v => v.verse === screen.verse)
             : -1;
-          const startIndex = verseIndex >= 0 ? verseIndex : 0;
+          const displayedVerses = (screen.verse !== undefined && verseIndex >= 0)
+            ? chapterVerses.slice(verseIndex)
+            : chapterVerses;
 
           return (
             <div className="space-y-4">
@@ -1187,18 +1260,21 @@ export default function App() {
               >
                 <div className="font-bold text-xs sm:text-sm md:text-base text-[#00ff41] leading-tight">
                   <TypewriterText
-                    key={`ch-hdr-${screen.book.id}-${screen.chapter}-${screen.verse || 'all'}-${language}`}
+                    key={`ch-hdr-${screen.book.id}-${screen.chapter}-${screen.verse || 'all'}-${language}-${translation}`}
                     text={language === 'en'
                       ? (screen.verse
-                          ? `[#${screen.book.number}] ${screen.book.nameEng} ${screen.chapter}:${screen.verse} — CHAPTER ${screen.chapter} / ${screen.book.chaptersCount}`
-                          : `[#${screen.book.number}] ${screen.book.nameEng} — CHAPTER ${screen.chapter} / ${screen.book.chaptersCount}`)
+                          ? `[#${screen.book.number}] ${screen.book.nameEng} ${screen.chapter}:${screen.verse} — CHAPTER ${screen.chapter} / ${screen.book.chaptersCount} [${translation.toUpperCase()}]`
+                          : `[#${screen.book.number}] ${screen.book.nameEng} — CHAPTER ${screen.chapter} / ${screen.book.chaptersCount} [${translation.toUpperCase()}]`)
                       : (screen.verse
-                          ? `[#${screen.book.number}] ${screen.book.nameUkr} ${screen.chapter}:${screen.verse} — РОЗДІЛ ${screen.chapter} / ${screen.book.chaptersCount}`
-                          : `[#${screen.book.number}] ${screen.book.nameUkr} — РОЗДІЛ ${screen.chapter} / ${screen.book.chaptersCount}`)}
+                          ? `[#${screen.book.number}] ${screen.book.nameUkr} ${screen.chapter}:${screen.verse} — РОЗДІЛ ${screen.chapter} / ${screen.book.chaptersCount} [${translation.toUpperCase()}]`
+                          : `[#${screen.book.number}] ${screen.book.nameUkr} — РОЗДІЛ ${screen.chapter} / ${screen.book.chaptersCount} [${translation.toUpperCase()}]`)}
                     speed={24}
                   />
                 </div>
                 <div className="flex items-center space-x-2 text-xs opacity-80 font-mono shrink-0 whitespace-nowrap">
+                  <span className="text-[10px] px-1 py-0.5 rounded border border-[#00ff41]/40 text-[#00ff41]">
+                    {translation.toUpperCase()}
+                  </span>
                   <span>[<code className="text-[#00ff41]">p</code> / <code className="text-[#00ff41]">n</code>]</span>
                   {screen.verse && (
                     <span className="text-[10px] px-1 py-0.5 rounded border border-[#00ff41]/30">
@@ -1211,11 +1287,11 @@ export default function App() {
               {/* Verses List with Typewriter Streaming starting directly at chosen verse */}
               <div className="space-y-2 py-1">
                 <MultiLineTypewriter
-                  key={`ch-verses-${screen.book.id}-${screen.chapter}-${screen.verse || 0}-${language}`}
+                  key={`ch-verses-${screen.book.id}-${screen.chapter}-${screen.verse || 0}-${language}-${translation}`}
                   speed={20}
                   chunkSize={2}
-                  startLineIndex={startIndex}
-                  lines={chapterVerses.map((v: Verse) => {
+                  startLineIndex={0}
+                  lines={displayedVerses.map((v: Verse) => {
                     const isSelected = screen.verse === v.verse;
                     let highlightClass = '';
                     if (isSelected && lightState !== 'off') {
@@ -1245,7 +1321,9 @@ export default function App() {
                   * {language === 'en' ? 'Navigation:' : 'Навігація:'}{' '}
                   <code className="text-[#00ff41]">next</code> (<code className="text-[#00ff41]">n</code>) |{' '}
                   <code className="text-[#00ff41]">prev</code> (<code className="text-[#00ff41]">p</code>) |{' '}
-                  <code className="text-[#00ff41]">bw</code>
+                  <code className="text-[#00ff41]">bw</code> |{' '}
+                  <code className="text-[#00ff41]">ubio</code> |{' '}
+                  <code className="text-[#00ff41]">cuv</code>
                   {screen.verse && (
                     <>
                       {' | '}<code className="text-[#00ff41]">ch</code>
@@ -1269,29 +1347,29 @@ export default function App() {
             <div className="border-b border-[#00ff41]/30 pb-2">
               <div className="font-bold text-sm md:text-base">
                 <TypewriterText
-                  key={`search-query-${screen.query}-${language}`}
-                  text={language === 'en' ? `SEARCH RESULTS: "${screen.query}"` : `РЕЗУЛЬТАТИ ПОШУКУ: "${screen.query}"`}
+                  key={`search-query-${screen.query}-${language}-${translation}`}
+                  text={language === 'en' ? `SEARCH RESULTS [${translation.toUpperCase()}]: "${screen.query}"` : `РЕЗУЛЬТАТИ ПОШУКУ [${translation.toUpperCase()}]: "${screen.query}"`}
                   speed={16}
                 />
               </div>
               <div className="opacity-70 text-xs pt-1">
                 {language === 'en'
-                  ? `Matches found: ${screen.results.length} • Type book number, chapter and verse (e.g. ${screen.results[0] ? `${CANONICAL_BOOKS.find(b => b.id === screen.results[0].bookId)?.number || 43} ${screen.results[0].chapter} ${screen.results[0].verse}` : '43 3 16'})`
-                  : `Знайдено збігів: ${screen.results.length} • Для переходу введіть номер книги, розділ і вірш (напр. ${screen.results[0] ? `${CANONICAL_BOOKS.find(b => b.id === screen.results[0].bookId)?.number || 43} ${screen.results[0].chapter} ${screen.results[0].verse}` : '43 3 16'})`}
+                  ? `Matches found: ${screen.results.length} • Type result number (e.g. 1) or reference (e.g. ${screen.results[0] ? `${CANONICAL_BOOKS.find(b => b.id === screen.results[0].bookId)?.number || 43} ${screen.results[0].chapter} ${screen.results[0].verse}` : '43 3 16'}) to open:`
+                  : `Знайдено збігів: ${screen.results.length} • Введіть номер у списку (напр. 1) або команду вірша (напр. ${screen.results[0] ? `${CANONICAL_BOOKS.find(b => b.id === screen.results[0].bookId)?.number || 43} ${screen.results[0].chapter} ${screen.results[0].verse}` : '43 3 16'}):`}
               </div>
             </div>
 
             {screen.results.length === 0 ? (
               <div className="opacity-70 text-xs py-4">
                 <TypewriterText 
-                  text={language === 'en' ? `Nothing found for "${screen.query}".` : `Нічого не знайдено за запитом "${screen.query}".`} 
+                  text={language === 'en' ? `Nothing found for "${screen.query}" in ${translation.toUpperCase()}.` : `Нічого не знайдено за запитом "${screen.query}" у ${translation.toUpperCase()}.`} 
                   speed={32} 
                 />
               </div>
             ) : (
               <div className="space-y-3">
                 <MultiLineTypewriter
-                  key={`search-res-${screen.query}-${language}`}
+                  key={`search-res-${screen.query}-${language}-${translation}`}
                   speed={20}
                   chunkSize={2}
                   lines={screen.results.map((r, idx) => {
@@ -1302,20 +1380,31 @@ export default function App() {
                       id: idx,
                       prefix: (
                         <div className="font-bold text-xs flex items-center justify-between pb-1 border-b border-[#00ff41]/20 mb-1">
-                          <span>* {bookDisplayName} {r.chapter}:{r.verse}</span>
-                          <code className="text-[#00ff41] opacity-70">type &gt; {bNum} {r.chapter} {r.verse}</code>
+                          <span className="flex items-center space-x-1.5">
+                            <span className="text-[#00ff41] bg-[#00ff41]/20 px-1 py-0.5 rounded font-mono">[{idx + 1}]</span>
+                            <span>* {bookDisplayName} {r.chapter}:{r.verse}</span>
+                          </span>
+                          <code className="text-[#00ff41] opacity-75 font-mono text-[11px]">
+                            {language === 'en' ? `type > ${idx + 1} or ${bNum} ${r.chapter} ${r.verse}` : `введіть > ${idx + 1} або ${bNum} ${r.chapter} ${r.verse}`}
+                          </code>
                         </div>
                       ),
                       text: language === 'en' ? (r.textEng || r.textUkr) : r.textUkr,
-                      className: "p-2 border border-[#00ff41]/30 bg-[#00ff41]/5 space-y-1 text-xs md:text-sm leading-relaxed"
+                      className: "p-2.5 border border-[#00ff41]/30 bg-[#00ff41]/5 hover:bg-[#00ff41]/15 hover:border-[#00ff41]/70 transition-colors cursor-pointer rounded space-y-1 text-xs md:text-sm leading-relaxed"
                     };
                   })}
                 />
               </div>
             )}
 
-            <div className="pt-4 text-xs opacity-75 border-t border-[#00ff41]/20">
-              * Type <code className="text-[#00ff41]">home</code> {language === 'en' ? 'to return to command list' : 'для повернення на головну'}
+            <div className="pt-4 text-xs opacity-75 border-t border-[#00ff41]/20 flex flex-wrap items-center justify-between gap-2">
+              <span>
+                * Type <code className="text-[#00ff41]">home</code> {language === 'en' ? 'to return to main menu' : 'для повернення на головну'}
+              </span>
+              <span>
+                * {language === 'en' ? 'Switch translation:' : 'Змінити переклад:'}{' '}
+                <code className="text-[#00ff41]">ubio</code> / <code className="text-[#00ff41]">cuv</code>
+              </span>
             </div>
           </div>
         )}

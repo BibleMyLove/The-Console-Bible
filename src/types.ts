@@ -36,26 +36,6 @@ export interface Verse {
   textEng?: string;
 }
 
-export interface Bookmark {
-  id: string;
-  bookId: string;
-  bookName: string;
-  chapter: number;
-  verse: number;
-  textUkr: string;
-  note?: string;
-  tag?: string;
-  createdAt: string;
-}
-
-export interface Highlight {
-  id: string;
-  bookId: string;
-  chapter: number;
-  verse: number;
-  color: 'yellow' | 'green' | 'cyan' | 'magenta' | 'red';
-}
-
 export interface SearchResult {
   bookId: string;
   bookName: string;
@@ -65,36 +45,4 @@ export interface SearchResult {
   textUkr: string;
   textEng?: string;
   matches: string[];
-}
-
-export type TerminalTheme = 
-  | 'matrix'       // Phosphor Matrix Green (#00ff66)
-  | 'amber'        // Vintage Amber CRT (#ffb000)
-  | 'nord'         // Arctic Nord Ice Blue & Slate
-  | 'cyberpunk'    // Cyan & Magenta Neon
-  | 'dos'          // Classic VGA Blue/White
-  | 'paper'        // Monospace Clean Light Paper
-  | 'dracula'      // Dracula Dark Violet
-  | 'solarized';   // Solarized Dark
-
-export type TerminalLayout = 'tui' | 'split' | 'cli' | 'reader';
-
-export type TranslationMode = 'ukr' | 'eng' | 'parallel';
-
-export interface CommandHistoryItem {
-  id: string;
-  command: string;
-  timestamp: string;
-  outputType: 'text' | 'error' | 'success' | 'info' | 'table' | 'verse' | 'verses' | 'man' | 'help' | 'neofetch';
-  content?: any;
-}
-
-export interface BibleStats {
-  totalBooks: number;
-  totalChapters: number;
-  totalVerses: number;
-  otBooks: number;
-  ntBooks: number;
-  readChaptersCount: number;
-  bookmarkedCount: number;
 }
